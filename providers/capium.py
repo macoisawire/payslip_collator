@@ -164,17 +164,21 @@ class CapiumProvider(BaseProvider):
         # then a letter (e.g. "1257L"), but some codes carry a leading letter
         # prefix — e.g. "C1257L" (cumulative), "S1257L" (Scottish), "K475".
         # [A-Z]{0,2} makes the prefix optional so both forms are captured.
-        # The \b word boundary prevents a partial match against the NI number
-        # earlier on the same line.
-        # \d{2,4}: minimum 2 digits — handles codes like "45T" (2 digits) as well
-        #   as the common 3-4 digit codes (1257L, 793T, C839L). Previously \d{3,4}
-        #   required 3 digits minimum, causing "45T" to return None.
-        # [A-Z]: exactly 1 trailing letter — all digit-containing UK tax codes end
-        #   in exactly one letter. Previously [A-Z]{1,2} allowed 2, which caused
-        #   unnecessary backtracking near "M1" basis indicators.
-        # (?:(?:M1|W1)\s+)?: Month 1 / Week 1 basis indicator appears between the
-        #   tax code and BACS on non-cumulative payslips, e.g. "C839L M1 BACS".
-        return _find(text, r'\b([A-Z]{0,2}\d{2,4}[A-Z])\s+(?:(?:M1|W1)\s+)?BACS')
+        # \d{2,4}: minimum 2 digits handles codes like "45T" as well as 3-4 digit codes.
+        # [A-Z]: exactly 1 trailing letter — all digit-containing UK codes end in one letter.
+        #
+        # Basis indicator (M1/W1): non-cumulative payslips print the Month 1 / Week 1
+        # basis indicator as a separate token between the tax code and BACS:
+        #   "793T M1 BACS"  →  group(1)="793T"  group(2)="M1"
+        # group(2) is a capturing group so we can append it without a space:
+        #   "793T" + "M1" = "793TM1"
+        # When no basis indicator is present group(2) is None and only group(1) is returned.
+        m = re.search(r'\b([A-Z]{0,2}\d{2,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
+        if not m:
+            return None
+        code = m.group(1)
+        basis = m.group(2).strip() if m.group(2) else ''
+        return code + basis
 
     def _ni_number(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
