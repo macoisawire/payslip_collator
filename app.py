@@ -42,7 +42,6 @@ provider_name = st.selectbox(
 
 pdf_password = st.text_input(
     "PDF password (if required)",
-    type="password",
     placeholder="Leave blank for unprotected PDFs",
 )
 
@@ -89,15 +88,46 @@ if st.button("Process", disabled=not uploaded_files):
 records = st.session_state.get("records")
 
 if records:
-    keys = [key for key, _ in FIELDS]
-    display_names = [name for _, name in FIELDS]
+    canonical_keys = [key for key, _ in FIELDS]
+    canonical_names = [name for _, name in FIELDS]
+    canonical_set = set(canonical_keys)
 
-    # reindex ensures column order matches config.FIELDS regardless of dict
-    # key order, and fills any missing keys with NaN rather than raising
-    df = pd.DataFrame(records).reindex(columns=keys)
-    df.columns = display_names
+    # Collect extra (dynamic) keys in first-seen order across all records.
+    seen_extra: set[str] = set()
+    extra_keys: list[str] = []
+    for record in records:
+        for k in record:
+            if k not in canonical_set and k not in seen_extra:
+                extra_keys.append(k)
+                seen_extra.add(k)
 
-    st.dataframe(df, use_container_width=True)
+    extra_names = [k.replace('_', ' ').title() for k in extra_keys]
+    all_keys = canonical_keys + extra_keys
+    all_names = canonical_names + extra_names
+
+    df = pd.DataFrame(records).reindex(columns=all_keys)
+    df.columns = all_names
+
+    if extra_keys:
+        # Highlight every cell in extra columns amber so they stand out.
+        def _highlight_extra(data: pd.DataFrame) -> pd.DataFrame:
+            styles = pd.DataFrame('', index=data.index, columns=data.columns)
+            for name in extra_names:
+                if name in styles.columns:
+                    styles[name] = 'background-color: #FFF3CD; color: #856404'
+            return styles
+
+        st.dataframe(
+            df.style.apply(_highlight_extra, axis=None),
+            use_container_width=True,
+        )
+        n_extra = len(extra_keys)
+        st.caption(
+            f"⚠ {n_extra} unrecognised field{'s' if n_extra != 1 else ''} detected "
+            f"(highlighted) — review and add to the schema in the next iteration if needed."
+        )
+    else:
+        st.dataframe(df, use_container_width=True)
 
     # Download and Clear sit side by side below the grid
     col_dl, col_clear = st.columns([3, 1])

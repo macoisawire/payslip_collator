@@ -35,7 +35,8 @@ def extract_payslip(file_obj, provider_name: str, password: str = "") -> dict | 
             pages_text = [page.extract_text() or "" for page in pdf.pages]
             text = "\n".join(pages_text)
 
-        result = provider_class().extract(text)
+        provider = provider_class()
+        result = provider.extract(text)
 
         if result is None:
             print(f"Warning: provider '{provider_name}' returned None — skipping file.")
@@ -43,6 +44,10 @@ def extract_payslip(file_obj, provider_name: str, password: str = "") -> dict | 
 
         # Inject provider name here so individual providers don't need to set it
         result["provider"] = provider_name
+
+        # Merge any bonus fields found by the provider's generic scanner.
+        # These appear as extra columns to the right of the canonical schema.
+        result.update(provider.extra_fields(text))
         return result
 
     except Exception as e:

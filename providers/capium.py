@@ -11,6 +11,25 @@
 import re
 from .base import BaseProvider
 
+# Labels already captured by extract() or that are structural document noise
+# (duplicates, always-zero placeholders, layout artefacts).  Any label NOT in
+# this set that carries a non-zero £ value will be returned by extra_fields().
+_KNOWN_LABELS = frozenset({
+    # Canonical pay components
+    "Basic Pay", "SMP",
+    # Canonical deductions
+    "PAYE Tax", "Employee NI", "Employee Pension",
+    # YTD / summary figures captured or intentionally excluded
+    "TOTAL PAY", "TAXABLE PAY", "TAX",
+    "N.I.EMPLOYEE", "N.I.EMPLOYER",
+    "PENSION EMPLOYEE", "PENSION EMPLOYER",
+    # Structural / duplicate / noise labels
+    "DEDUCTIONS", "NON TAXABLE", "NATIONAL", "INSURANCE TOTAL PAY",
+    # N.I'ABLE PAY — the apostrophe splits the label in the regex, producing
+    # the fragment "ABLE PAY".  Both forms are excluded.
+    "N.I'ABLE PAY", "ABLE PAY",
+})
+
 
 def _decode_cid(text: str) -> str:
     """Convert (cid:XX) sequences to their Unicode characters.
@@ -153,6 +172,27 @@ class CapiumProvider(BaseProvider):
             _money(text, r'N\.I\.EMPLOYEE\s+£([\d,]+\.\d{2})')
             or _money(text, r'Employee Pension\s+£[\d,]+\.\d{2}\n£([\d,]+\.\d{2})')
         )
+
+    def extra_fields(self, text: str) -> dict:
+        # Decode CID sequences first — same pre-processing as extract().
+        text = _decode_cid(text)
+        extras = {}
+        # Scan for every "LABEL £amount" pair where LABEL starts with a capital.
+        # \b after the £ amount prevents partial matches inside longer numbers.
+        for m in re.finditer(r"([A-Z][A-Za-z ./'\-]+?)\s+£([\d,]+\.\d{2})\b", text):
+            label = m.group(1).strip()
+            if label in _KNOWN_LABELS:
+                continue
+            value = float(m.group(2).replace(',', ''))
+            if value == 0.0:
+                # Zero-value entries are structural placeholders (e.g. SAP £0.00
+                # in months with no adoption pay) — skip to avoid noise.
+                continue
+            # Sanitise label to a valid dict key; first match wins if repeated.
+            key = re.sub(r'\W+', '_', label.lower()).strip('_')
+            if key not in extras:
+                extras[key] = value
+        return extras
 
     def _ytd_pension_employee(self, text: str) -> float | None:
         # Older format (2023-24, 2024-25): explicitly labelled "PENSION EMPLOYEE £177.65"

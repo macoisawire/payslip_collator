@@ -17,3 +17,15 @@ class BaseProvider(ABC):
         Never raise an exception — return None values for failed fields instead.
         """
         pass
+
+    def extra_fields(self, text: str) -> dict:
+        """
+        Scan for monetary fields not captured by extract().
+
+        Returns an empty dict by default. Providers may override this to return
+        any labelled £ values found in the PDF that fall outside the canonical
+        schema. Keys returned here appear as bonus columns to the right of the
+        standard columns in both the preview table and the Excel download,
+        highlighted in amber for review.
+        """
+        return {}
