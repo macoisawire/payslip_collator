@@ -65,9 +65,13 @@ if st.button("Process", disabled=not uploaded_files):
     progress = st.progress(0.0, text="Starting…")
 
     for i, file in enumerate(uploaded_files, start=1):
-        progress.progress(i / total, text=f"Processing {file.name}…")
+        progress.progress((i - 1) / total, text=f"Processing {file.name}…")
 
-        results = extract_payslip(file, provider_name, password=pdf_password)
+        def _on_page(current, page_total, _i=i, _name=file.name):
+            pct = (_i - 1 + current / page_total) / total
+            progress.progress(pct, text=f"Processing {_name}… page {current}/{page_total}")
+
+        results = extract_payslip(file, provider_name, password=pdf_password, on_page=_on_page)
 
         if results:
             n = len(results)

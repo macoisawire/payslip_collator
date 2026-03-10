@@ -10,7 +10,12 @@ import pdfplumber
 from providers import PROVIDERS
 
 
-def extract_payslip(file_obj, provider_name: str, password: str = "") -> list[dict]:
+def extract_payslip(
+    file_obj,
+    provider_name: str,
+    password: str = "",
+    on_page=None,
+) -> list[dict]:
     """
     Extract fields from a payslip PDF, one record per page.
 
@@ -37,7 +42,8 @@ def extract_payslip(file_obj, provider_name: str, password: str = "") -> list[di
         results = []
 
         with pdfplumber.open(file_obj, **open_kwargs) as pdf:
-            for page in pdf.pages:
+            total_pages = len(pdf.pages)
+            for page_num, page in enumerate(pdf.pages, start=1):
                 text = page.extract_text() or ""
                 if not text.strip():
                     continue  # skip blank / cover pages
@@ -49,6 +55,9 @@ def extract_payslip(file_obj, provider_name: str, password: str = "") -> list[di
                 result["provider"] = provider_name
                 result.update(provider.extra_fields(text))
                 results.append(result)
+
+                if on_page:
+                    on_page(page_num, total_pages)
 
         if not results:
             print(f"Warning: provider '{provider_name}' matched no pages — skipping file.")
