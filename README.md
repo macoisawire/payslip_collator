@@ -19,7 +19,7 @@ Runs entirely on your local machine — no internet connection required, no data
 ## Requirements
 
 - **Python 3.10 or later** — download from [python.org](https://www.python.org/downloads/)
-  - During installation, tick **"Add Python to PATH"** — this is required
+  - During installation, tick **"Add Python to PATH"**
 
 ---
 
@@ -75,7 +75,7 @@ The downloaded file is named `Provider_Payslips_DD_MM_YYYY_HH_MM.xlsx`.
 
 ## Troubleshooting
 
-**"streamlit is not recognised"** — Python was not added to PATH during installation. Reinstall Python and tick "Add Python to PATH".
+**"streamlit is not recognised"** — Python itself is not on PATH. Reinstall Python from [python.org](https://www.python.org/downloads/) and tick **"Add Python to PATH"** on the first installer screen.
 
 **A file shows a warning and is skipped** — check that the correct provider is selected. If the PDF is password-protected, make sure the password field is filled in before clicking Process.
 
