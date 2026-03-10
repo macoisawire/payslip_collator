@@ -5,6 +5,7 @@ Run with: streamlit run app.py
 """
 
 import io
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -82,9 +83,12 @@ if records:
     buf.seek(0)
 
     n = len(records)
+    timestamp = datetime.now().strftime("%d_%m_%Y_%H_%M")
+    file_name = f"{provider_name}_Payslips_{timestamp}.xlsx"
+
     st.download_button(
         label=f"Download Excel ({n} payslip{'s' if n != 1 else ''})",
         data=buf,
-        file_name="payslips.xlsx",
+        file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
