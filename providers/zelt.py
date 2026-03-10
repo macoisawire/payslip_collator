@@ -45,6 +45,7 @@ class ZeltProvider(BaseProvider):
             "tax_code":             self._tax_code(text),
             "ni_number":            self._ni_number(text),
             "basic_pay":            _money(text, r'Monthly Pay\s+£([\d,]+\.\d{2})'),
+            "smp":                  None,  # Not present in Zelt format
             "pension_employee":     _money(text, r'Pension contribution\s+-£([\d,]+\.\d{2})'),
             "student_loan":         _money(text, r'Student Loan Deduction\s+-£([\d,]+\.\d{2})'),
             "ni_employee":          _money(text, r'National Insurance Contribution\s+£([\d,]+\.\d{2})'),

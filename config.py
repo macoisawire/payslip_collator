@@ -12,6 +12,7 @@ FIELDS = [
     ("tax_code",              "Tax Code"),
     ("ni_number",             "NI Number"),
     ("basic_pay",             "Basic / Monthly Pay"),
+    ("smp",                   "SMP"),
     ("pension_employee",      "Employee Pension Contribution"),
     ("student_loan",          "Student Loan Deduction"),
     ("ni_employee",           "Employee NI"),

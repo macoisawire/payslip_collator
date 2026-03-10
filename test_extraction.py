@@ -27,8 +27,8 @@ PASSWORDS = {
 
 # Fields that are legitimately None for each provider — not counted as failures.
 EXPECTED_NONE = {
-    "Zelt":   {"ytd_gross"},
-    "Capium": {"ni_employer", "pension_employer", "ytd_taxable", "student_loan", "ytd_pension_employer"},
+    "Zelt":   {"ytd_gross", "smp"},
+    "Capium": {"ni_employer", "pension_employer", "ytd_taxable", "student_loan", "ytd_pension_employer", "smp"},
 }
 
 

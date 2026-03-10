@@ -51,6 +51,7 @@ class CapiumProvider(BaseProvider):
             "tax_code":             self._tax_code(text),
             "ni_number":            self._ni_number(text),
             "basic_pay":            _money(text, r'Basic Pay\s+£([\d,]+\.\d{2})'),
+            "smp":                  _money(text, r'SMP\s+£([\d,]+\.\d{2})'),
             "pension_employee":     _money(text, r'Employee Pension\s+£([\d,]+\.\d{2})'),
             "student_loan":         None,  # Not present in Capium format
             "ni_employee":          _money(text, r'Employee NI\s+£([\d,]+\.\d{2})'),
