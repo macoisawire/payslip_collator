@@ -98,11 +98,15 @@ class CapiumProvider(BaseProvider):
         # just before the DD/MM/YYYY date that ends the line.
         # This correctly excludes the employer name before the title.
         # Title is excluded from the capture group per CLAUDE.md (strip the title).
-        # [A-Z]\w+ replaces [A-Z][a-z]+ to handle mixed-case surnames like
-        # "McDonnell" where [a-z]+ would stop at the uppercase D.
+        #
+        # re.IGNORECASE: handles titles printed in all-caps (e.g. "MS" vs "Ms").
+        # [\w']+: the apostrophe is added alongside \w to capture surnames like
+        #   O'Sullivan, where bare \w+ would stop at the apostrophe and miss the
+        #   rest of the surname, causing the whole date-anchored match to fail.
         m = re.search(
-            r'(?:Mrs?|Miss|Dr|Ms)\s+([A-Z]\w+(?:\s+[A-Z]\w+)*)\s+\d{2}/\d{2}/\d{4}',
-            text
+            r'(?:Mrs?|Miss|Dr|Ms)\s+([A-Z][\w\']+(?:\s+[A-Z][\w\']+)*)\s+\d{2}/\d{2}/\d{4}',
+            text,
+            re.IGNORECASE,
         )
         return m.group(1).strip() if m else None
 
@@ -110,9 +114,11 @@ class CapiumProvider(BaseProvider):
         # Line 2 sits immediately after the "EMPLOYER EMPLOYEE NAME DATE" header line.
         # We capture everything on that data line up to the first title prefix —
         # that prefix is where the employer name ends and the employee name begins.
+        # re.IGNORECASE: same as _employee_name — titles may appear as "MS" not "Ms".
         m = re.search(
             r'EMPLOYER EMPLOYEE NAME DATE\n(.+?)\s+(?:Mrs?|Miss|Dr|Ms)\s+',
-            text
+            text,
+            re.IGNORECASE,
         )
         return m.group(1).strip() if m else None
 
@@ -130,11 +136,14 @@ class CapiumProvider(BaseProvider):
 
     def _tax_code(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
-        # Tax code is a 3–4 digit number immediately followed by a letter,
-        # sitting just before "BACS". The \b word boundary prevents partial
-        # matches inside the NI number (which also contains digits) earlier
-        # on the same line.
-        return _find(text, r'\b(\d{3,4}[A-Z])\s+BACS')
+        # Tax code sits immediately before "BACS". Standard UK codes are digits
+        # then a letter (e.g. "1257L"), but some codes carry a leading letter
+        # prefix — e.g. "C1257L" (cumulative), "S1257L" (Scottish), "K475".
+        # [A-Z]{0,2} makes the prefix optional so both forms are captured.
+        # The \b word boundary still prevents a partial match against the NI
+        # number earlier on the same line (tested: PK853428A cannot satisfy
+        # [A-Z]{0,2}\d{3,4}[A-Z]{1,2} at a word boundary before "BACS").
+        return _find(text, r'\b([A-Z]{0,2}\d{3,4}[A-Z]{1,2})\s+BACS')
 
     def _ni_number(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
