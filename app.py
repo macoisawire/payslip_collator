@@ -67,11 +67,13 @@ if st.button("Process", disabled=not uploaded_files):
     for i, file in enumerate(uploaded_files, start=1):
         progress.progress(i / total, text=f"Processing {file.name}…")
 
-        result = extract_payslip(file, provider_name, password=pdf_password)
+        results = extract_payslip(file, provider_name, password=pdf_password)
 
-        if result is not None:
-            st.success(f"✓  {file.name}")
-            records.append(result)
+        if results:
+            n = len(results)
+            suffix = f" — {n} payslips" if n > 1 else ""
+            st.success(f"✓  {file.name}{suffix}")
+            records.extend(results)
         else:
             st.warning(f"⚠  {file.name} — could not extract fields. Check the provider is correct and, if the PDF is password-protected, that the password field is filled in.")
 

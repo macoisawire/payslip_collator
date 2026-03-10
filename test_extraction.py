@@ -60,10 +60,10 @@ def run_test(provider_name: str, pdf_path: Path, password: str = "") -> None:
     print("=" * 65)
 
     with open(pdf_path, "rb") as f:
-        result = extract_payslip(f, provider_name, password=password)
+        results = extract_payslip(f, provider_name, password=password)
 
-    if result is None:
-        print("  EXTRACTION FAILED — extract_payslip() returned None.")
+    if not results:
+        print("  EXTRACTION FAILED — extract_payslip() returned empty list.")
         return
 
     expected_none = EXPECTED_NONE.get(provider_name, set())
@@ -72,38 +72,42 @@ def run_test(provider_name: str, pdf_path: Path, password: str = "") -> None:
     val_w   = 32
     stat_w  = 16
 
-    header = f"  {'Field':<{name_w}} {'Value':<{val_w}} Status"
-    print(header)
-    print("  " + "-" * (name_w + val_w + stat_w))
+    for idx, result in enumerate(results, start=1):
+        if len(results) > 1:
+            print(f"\n  -- Page {idx} --")
 
-    failures = []
+        header = f"  {'Field':<{name_w}} {'Value':<{val_w}} Status"
+        print(header)
+        print("  " + "-" * (name_w + val_w + stat_w))
 
-    for key, display_name in FIELDS:
-        value = result.get(key)
+        failures = []
 
-        if value is None:
-            if key in expected_none:
-                status = "— expected None"
-                val_str = ""
+        for key, display_name in FIELDS:
+            value = result.get(key)
+
+            if value is None:
+                if key in expected_none:
+                    status = "— expected None"
+                    val_str = ""
+                else:
+                    status = "FAIL — None"
+                    val_str = ""
+                    failures.append(display_name)
             else:
-                status = "FAIL — None"
-                val_str = ""
-                failures.append(display_name)
+                status = "OK"
+                val_str = str(value)
+                if len(val_str) > val_w - 2:
+                    val_str = val_str[: val_w - 5] + "..."
+
+            print(f"  {display_name:<{name_w}} {val_str:<{val_w}} {status}")
+
+        print()
+        if failures:
+            print(f"  *** {len(failures)} field(s) returned None unexpectedly: ***")
+            for name in failures:
+                print(f"      - {name}")
         else:
-            status = "OK"
-            val_str = str(value)
-            if len(val_str) > val_w - 2:
-                val_str = val_str[: val_w - 5] + "..."
-
-        print(f"  {display_name:<{name_w}} {val_str:<{val_w}} {status}")
-
-    print()
-    if failures:
-        print(f"  *** {len(failures)} field(s) returned None unexpectedly: ***")
-        for name in failures:
-            print(f"      - {name}")
-    else:
-        print("  All expected fields extracted successfully.")
+            print("  All expected fields extracted successfully.")
 
 
 # ---------------------------------------------------------------------------

@@ -1,15 +1,18 @@
 """
 extractor.py
-Orchestrates the PDF -> dict pipeline for a single payslip file.
+Orchestrates the PDF -> list[dict] pipeline for a payslip file.
+
+Each page is treated as an independent payslip, so a multi-page PDF
+produces one dict per page rather than one combined dict.
 """
 
 import pdfplumber
 from providers import PROVIDERS
 
 
-def extract_payslip(file_obj, provider_name: str, password: str = "") -> dict | None:
+def extract_payslip(file_obj, provider_name: str, password: str = "") -> list[dict]:
     """
-    Extract fields from a single payslip PDF.
+    Extract fields from a payslip PDF, one record per page.
 
     Args:
         file_obj:      File-like object from Streamlit uploader (BytesIO-compatible).
@@ -19,37 +22,39 @@ def extract_payslip(file_obj, provider_name: str, password: str = "") -> dict | 
                        non-empty so unprotected files are unaffected.
 
     Returns:
-        Dict with keys matching config.FIELDS, with 'provider' injected.
-        Returns None on any failure — caller is responsible for surfacing the error.
+        List of dicts (one per payslip page), each with keys matching config.FIELDS
+        and 'provider' injected. Returns an empty list on total failure or if no
+        pages matched — caller is responsible for surfacing the error.
     """
     try:
         provider_class = PROVIDERS.get(provider_name)
         if provider_class is None:
             print(f"Warning: unknown provider '{provider_name}' — skipping file.")
-            return None
+            return []
 
         open_kwargs = {"password": password} if password else {}
-        with pdfplumber.open(file_obj, **open_kwargs) as pdf:
-            # Join all pages with a newline so multi-page payslips form one
-            # continuous string. Provider regex can still anchor on \n boundaries.
-            pages_text = [page.extract_text() or "" for page in pdf.pages]
-            text = "\n".join(pages_text)
-
         provider = provider_class()
-        result = provider.extract(text)
+        results = []
 
-        if result is None:
-            print(f"Warning: provider '{provider_name}' returned None — skipping file.")
-            return None
+        with pdfplumber.open(file_obj, **open_kwargs) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                if not text.strip():
+                    continue  # skip blank / cover pages
 
-        # Inject provider name here so individual providers don't need to set it
-        result["provider"] = provider_name
+                result = provider.extract(text)
+                if result is None:
+                    continue  # page didn't match this provider's layout
 
-        # Merge any bonus fields found by the provider's generic scanner.
-        # These appear as extra columns to the right of the canonical schema.
-        result.update(provider.extra_fields(text))
-        return result
+                result["provider"] = provider_name
+                result.update(provider.extra_fields(text))
+                results.append(result)
+
+        if not results:
+            print(f"Warning: provider '{provider_name}' matched no pages — skipping file.")
+
+        return results
 
     except Exception as e:
         print(f"Warning: failed to extract payslip — {e}")
-        return None
+        return []
