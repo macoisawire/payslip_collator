@@ -16,10 +16,10 @@ from datetime import datetime
 from .base import BaseProvider
 
 
-def _money(text: str, pattern: str) -> float | None:
+def _money(text: str, pattern: str, flags: int = 0) -> float | None:
     """Find pattern in text, strip £ formatting from group(1), return as float.
     Returns None if pattern does not match."""
-    m = re.search(pattern, text)
+    m = re.search(pattern, text, flags)
     if not m:
         return None
     return float(m.group(1).replace(',', ''))
@@ -65,27 +65,29 @@ class ZeltProvider(BaseProvider):
     # Field extractors — each has a comment explaining the anchoring logic
     # -------------------------------------------------------------------------
 
-    def _employee_name(self, text: str) -> str | None:
+    def _name_line_match(self, text: str):
         # Line 1: "Dan McDonnell Syrenis Limited"
-        # Zelt omits title prefixes, so we can't split on Mrs/Mr as Capium does.
-        # Instead, we anchor on common UK company suffixes to locate where the
-        # employer name starts, and capture everything before it as the employee name.
-        # (.+?) is non-greedy so it stops at the earliest possible company-suffix match.
-        m = re.search(
-            r'^(.+?)\s+[A-Z][a-zA-Z& .]+(?:Limited|Ltd|LLP|plc|PLC|Inc)\s*$',
+        # Both employee name and employer name live on the same line.
+        # We use a greedy (.*) for the employee portion — greedy means it takes
+        # as much as possible, which forces the company pattern to match from the
+        # END of the line rather than the earliest possible position.
+        # Non-greedy (.+?) was wrong: it stopped at "Dan", ignoring "McDonnell".
+        # The previous employer pattern used [A-Z][a-z]+ which broke on mixed-case
+        # names like "McDonnell" (uppercase D in the middle).
+        # [\w& .]+? matches word chars, ampersand, space, or dot — covers names
+        # like "Syrenis", "Townley & Co", "Sci-Tech" etc.
+        return re.search(
+            r'^(.*)\s+([A-Z][\w& .]+?(?:Limited|Ltd|LLP|plc|PLC|Inc))\s*$',
             text, re.MULTILINE
         )
+
+    def _employee_name(self, text: str) -> str | None:
+        m = self._name_line_match(text)
         return m.group(1).strip() if m else None
 
     def _employer_name(self, text: str) -> str | None:
-        # Same line 1 as employee name.
-        # Capture the company-suffixed name at the end of the first line.
-        # [A-Z][a-zA-Z& .]+ allows for names like "Syrenis", "Townley & Co".
-        m = re.search(
-            r'^[A-Z][a-z]+ [A-Z][a-z]+\s+([A-Z][a-zA-Z& .]+(?:Limited|Ltd|LLP|plc|PLC|Inc))\s*$',
-            text, re.MULTILINE
-        )
-        return m.group(1).strip() if m else None
+        m = self._name_line_match(text)
+        return m.group(2).strip() if m else None
 
     def _period_label(self, text: str) -> str | None:
         # Line: "Period 11 £3,610.25"

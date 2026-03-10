@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:\\\\Repos\\\\payslip_collator\" && python test_extraction.py)"
+    ]
+  }
+}
