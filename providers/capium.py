@@ -67,8 +67,11 @@ class CapiumProvider(BaseProvider):
         # We match from the title through all capitalised name words, stopping
         # just before the DD/MM/YYYY date that ends the line.
         # This correctly excludes the employer name before the title.
+        # Title is excluded from the capture group per CLAUDE.md (strip the title).
+        # [A-Z]\w+ replaces [A-Z][a-z]+ to handle mixed-case surnames like
+        # "McDonnell" where [a-z]+ would stop at the uppercase D.
         m = re.search(
-            r'((?:Mrs?|Miss|Dr|Ms)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+\d{2}/\d{2}/\d{4}',
+            r'(?:Mrs?|Miss|Dr|Ms)\s+([A-Z]\w+(?:\s+[A-Z]\w+)*)\s+\d{2}/\d{2}/\d{4}',
             text
         )
         return m.group(1).strip() if m else None

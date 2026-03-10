@@ -18,14 +18,14 @@ from config import FIELDS
 # ---------------------------------------------------------------------------
 
 SAMPLES = {
-    "Zelt": r"C:\Users\The McDonnells\Downloads\zelt",
-    # "Capium": r"C:\path\to\capium_sample",  # uncomment when ready
+    "Zelt":   r"C:\Users\The McDonnells\Downloads\zelt",
+    "Capium": r"C:\Users\The McDonnells\Downloads\capium",
 }
 
 # Fields that are legitimately None for each provider — not counted as failures.
 EXPECTED_NONE = {
     "Zelt":   {"ytd_gross"},
-    "Capium": {"ni_employer", "pension_employer", "ytd_taxable", "student_loan"},
+    "Capium": {"ni_employer", "pension_employer", "ytd_taxable", "student_loan", "ytd_pension_employer"},
 }
 
 

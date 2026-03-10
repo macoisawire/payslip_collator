@@ -40,6 +40,12 @@ provider_name = st.selectbox(
     on_change=_clear_results,
 )
 
+pdf_password = st.text_input(
+    "PDF password (if required)",
+    type="password",
+    placeholder="Leave blank for unprotected PDFs",
+)
+
 uploaded_files = st.file_uploader(
     "Upload payslip PDFs",
     type="pdf",
@@ -62,13 +68,13 @@ if st.button("Process", disabled=not uploaded_files):
     for i, file in enumerate(uploaded_files, start=1):
         progress.progress(i / total, text=f"Processing {file.name}…")
 
-        result = extract_payslip(file, provider_name)
+        result = extract_payslip(file, provider_name, password=pdf_password)
 
         if result is not None:
             st.success(f"✓  {file.name}")
             records.append(result)
         else:
-            st.warning(f"⚠  {file.name} — could not extract fields. Check the provider selection and that the PDF is not password-protected.")
+            st.warning(f"⚠  {file.name} — could not extract fields. Check the provider is correct and, if the PDF is password-protected, that the password field is filled in.")
 
     progress.progress(1.0, text="Done.")
     st.session_state["records"] = records

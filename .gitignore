@@ -1,0 +1,39 @@
+# Python bytecode — auto-generated on every run, never needs committing
+__pycache__/
+*.py[cod]
+
+# Virtual environments — if created locally, don't commit
+venv/
+.venv/
+env/
+.env/
+
+# Claude Code local settings — personal to each machine
+.claude/
+
+# Streamlit secrets — not used yet but gitignored as a precaution
+.streamlit/secrets.toml
+
+# Output files — Excel exports from the app
+*.xlsx
+
+# PDF files — test/sample payslips should not be committed
+*.pdf
+
+# Leftover from accidental npm install
+package-lock.json
+node_modules/
+
+# Windows
+Thumbs.db
+desktop.ini
+*.lnk
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user

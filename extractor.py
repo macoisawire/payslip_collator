@@ -7,7 +7,7 @@ import pdfplumber
 from providers import PROVIDERS
 
 
-def extract_payslip(file_obj, provider_name: str) -> dict | None:
+def extract_payslip(file_obj, provider_name: str, password: str = "") -> dict | None:
     """
     Extract fields from a single payslip PDF.
 
@@ -15,6 +15,8 @@ def extract_payslip(file_obj, provider_name: str) -> dict | None:
         file_obj:      File-like object from Streamlit uploader (BytesIO-compatible).
                        pdfplumber accepts these directly — no temp file needed.
         provider_name: Key from providers.PROVIDERS, e.g. "Zelt" or "Capium".
+        password:      Optional PDF password. Only passed to pdfplumber when
+                       non-empty so unprotected files are unaffected.
 
     Returns:
         Dict with keys matching config.FIELDS, with 'provider' injected.
@@ -26,7 +28,8 @@ def extract_payslip(file_obj, provider_name: str) -> dict | None:
             print(f"Warning: unknown provider '{provider_name}' — skipping file.")
             return None
 
-        with pdfplumber.open(file_obj) as pdf:
+        open_kwargs = {"password": password} if password else {}
+        with pdfplumber.open(file_obj, **open_kwargs) as pdf:
             # Join all pages with a newline so multi-page payslips form one
             # continuous string. Provider regex can still anchor on \n boundaries.
             pages_text = [page.extract_text() or "" for page in pdf.pages]
