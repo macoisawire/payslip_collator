@@ -28,7 +28,16 @@ PASSWORDS = {
 # Fields that are legitimately None for each provider — not counted as failures.
 EXPECTED_NONE = {
     "Zelt":   {"ytd_gross", "smp"},
-    "Capium": {"ni_employer", "pension_employer", "ytd_taxable", "student_loan", "ytd_pension_employer", "smp"},
+    "Capium": {
+        # Fields not present in the Capium format
+        "ni_employer", "pension_employer", "ytd_taxable", "ytd_pension_employer",
+        # Optional earnings — only appear for employees with these components
+        "smp", "car_allowance", "on_call", "kit_pay", "holiday_exchange",
+        "salary_adj", "salary_maternity_adj", "smp_top_up",
+        # Optional deductions — only appear for employees with these components
+        "student_loan", "healthcare", "child_healthcare", "postgraduate_loan",
+        "car_salary_sacrifice", "pension_payment",
+    },
 }
 
 

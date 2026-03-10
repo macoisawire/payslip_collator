@@ -17,8 +17,14 @@ from .base import BaseProvider
 _KNOWN_LABELS = frozenset({
     # Canonical pay components
     "Basic Pay", "SMP",
+    # Canonical earnings extras (now in schema)
+    "Car Allowance", "On Call", "Kit Pay", "Holiday Exchange",
+    "Salary Adj", "Salary Maternity Adj", "SMP Top Up",
+    # Canonical deductions (now in schema)
+    "Healthcare", "Child Healthcare", "Postgraduate Loan",
+    "Car Salary Sacrifice", "Pension Payment",
     # Canonical deductions
-    "PAYE Tax", "Employee NI", "Employee Pension",
+    "PAYE Tax", "Employee NI", "Employee Pension", "Student Loan",
     # YTD / summary figures captured or intentionally excluded
     "TOTAL PAY", "TAXABLE PAY", "TAX",
     "N.I.EMPLOYEE", "N.I.EMPLOYER",
@@ -69,10 +75,24 @@ class CapiumProvider(BaseProvider):
             "period_date":          self._period_date(text),
             "tax_code":             self._tax_code(text),
             "ni_number":            self._ni_number(text),
+            # Earnings
             "basic_pay":            _money(text, r'Basic Pay\s+£([\d,]+\.\d{2})'),
             "smp":                  _money(text, r'SMP\s+£([\d,]+\.\d{2})'),
+            "car_allowance":        _money(text, r'Car Allowance\s+£([\d,]+\.\d{2})'),
+            "on_call":              _money(text, r'On Call\s+£([\d,]+\.\d{2})'),
+            "kit_pay":              _money(text, r'Kit Pay\s+£([\d,]+\.\d{2})'),
+            "holiday_exchange":     _money(text, r'Holiday Exchange\s+£([\d,]+\.\d{2})'),
+            "salary_adj":           _money(text, r'Salary Adj\s+£([\d,]+\.\d{2})'),
+            "salary_maternity_adj": _money(text, r'Salary Maternity Adj\s+£([\d,]+\.\d{2})'),
+            "smp_top_up":           _money(text, r'SMP Top Up\s+£([\d,]+\.\d{2})'),
+            # Deductions
             "pension_employee":     _money(text, r'Employee Pension\s+£([\d,]+\.\d{2})'),
-            "student_loan":         None,  # Not present in Capium format
+            "student_loan":         _money(text, r'Student Loan\s+£([\d,]+\.\d{2})'),
+            "healthcare":           _money(text, r'Healthcare\s+£([\d,]+\.\d{2})'),
+            "child_healthcare":     _money(text, r'Child Healthcare\s+£([\d,]+\.\d{2})'),
+            "postgraduate_loan":    _money(text, r'Postgraduate Loan\s+£([\d,]+\.\d{2})'),
+            "car_salary_sacrifice": _money(text, r'Car Salary Sacrifice\s+£([\d,]+\.\d{2})'),
+            "pension_payment":      _money(text, r'Pension Payment\s+£([\d,]+\.\d{2})'),
             "ni_employee":          _money(text, r'Employee NI\s+£([\d,]+\.\d{2})'),
             "paye_tax":             _money(text, r'PAYE Tax\s+£([\d,]+\.\d{2})'),
             "total_deductions":     self._total_deductions(text),
@@ -144,13 +164,17 @@ class CapiumProvider(BaseProvider):
         # then a letter (e.g. "1257L"), but some codes carry a leading letter
         # prefix — e.g. "C1257L" (cumulative), "S1257L" (Scottish), "K475".
         # [A-Z]{0,2} makes the prefix optional so both forms are captured.
-        # The \b word boundary still prevents a partial match against the NI
-        # number earlier on the same line (tested: PK853428A cannot satisfy
-        # [A-Z]{0,2}\d{3,4}[A-Z]{1,2} at a word boundary before "BACS").
-        # (?:(?:M1|W1)\s+)?: some payslips include a Month 1 / Week 1 basis
-        # indicator (non-cumulative emergency tax) between the tax code and BACS,
-        # e.g. "C839L M1 BACS". Making it optional handles both layouts.
-        return _find(text, r'\b([A-Z]{0,2}\d{3,4}[A-Z]{1,2})\s+(?:(?:M1|W1)\s+)?BACS')
+        # The \b word boundary prevents a partial match against the NI number
+        # earlier on the same line.
+        # \d{2,4}: minimum 2 digits — handles codes like "45T" (2 digits) as well
+        #   as the common 3-4 digit codes (1257L, 793T, C839L). Previously \d{3,4}
+        #   required 3 digits minimum, causing "45T" to return None.
+        # [A-Z]: exactly 1 trailing letter — all digit-containing UK tax codes end
+        #   in exactly one letter. Previously [A-Z]{1,2} allowed 2, which caused
+        #   unnecessary backtracking near "M1" basis indicators.
+        # (?:(?:M1|W1)\s+)?: Month 1 / Week 1 basis indicator appears between the
+        #   tax code and BACS on non-cumulative payslips, e.g. "C839L M1 BACS".
+        return _find(text, r'\b([A-Z]{0,2}\d{2,4}[A-Z])\s+(?:(?:M1|W1)\s+)?BACS')
 
     def _ni_number(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
