@@ -15,6 +15,12 @@ from extractor import extract_payslip
 from providers import PROVIDERS
 from spreadsheet import build_workbook
 
+
+def _clear_results():
+    """Callback — wipes extracted records from session state."""
+    st.session_state.pop("records", None)
+
+
 # ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
@@ -26,13 +32,23 @@ st.caption("Upload payslips, extract key fields, and download as a single Excel 
 # Provider selection + file upload
 # ---------------------------------------------------------------------------
 
-provider_name = st.selectbox("Payroll provider", list(PROVIDERS.keys()))
+# on_change fires before the rest of the script re-runs, so the results
+# section below will already see an empty session when the provider changes.
+provider_name = st.selectbox(
+    "Payroll provider",
+    list(PROVIDERS.keys()),
+    on_change=_clear_results,
+)
 
 uploaded_files = st.file_uploader(
     "Upload payslip PDFs",
     type="pdf",
     accept_multiple_files=True,
 )
+
+if uploaded_files:
+    n = len(uploaded_files)
+    st.caption(f"{n} file{'s' if n != 1 else ''} selected")
 
 # ---------------------------------------------------------------------------
 # Process button
@@ -61,7 +77,7 @@ if st.button("Process", disabled=not uploaded_files):
         st.error("No payslips were successfully extracted.")
 
 # ---------------------------------------------------------------------------
-# Results: dataframe preview + download button
+# Results: dataframe preview + download + clear
 # ---------------------------------------------------------------------------
 
 records = st.session_state.get("records")
@@ -77,18 +93,27 @@ if records:
 
     st.dataframe(df, use_container_width=True)
 
-    # Build the workbook in memory — no temp files on disk
-    buf = io.BytesIO()
-    build_workbook(records).save(buf)
-    buf.seek(0)
+    # Download and Clear sit side by side below the grid
+    col_dl, col_clear = st.columns([3, 1])
 
-    n = len(records)
-    timestamp = datetime.now().strftime("%d_%m_%Y_%H_%M")
-    file_name = f"{provider_name}_Payslips_{timestamp}.xlsx"
+    with col_dl:
+        buf = io.BytesIO()
+        build_workbook(records).save(buf)
+        buf.seek(0)
 
-    st.download_button(
-        label=f"Download Excel ({n} payslip{'s' if n != 1 else ''})",
-        data=buf,
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+        n = len(records)
+        timestamp = datetime.now().strftime("%d_%m_%Y_%H_%M")
+        file_name = f"{provider_name}_Payslips_{timestamp}.xlsx"
+
+        st.download_button(
+            label=f"Download Excel ({n} payslip{'s' if n != 1 else ''})",
+            data=buf,
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    with col_clear:
+        if st.button("Clear results", use_container_width=True):
+            _clear_results()
+            st.rerun()
