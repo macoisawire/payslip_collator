@@ -4,8 +4,6 @@ End-to-end extraction test against real payslip PDFs.
 
 Usage:
     python test_extraction.py
-
-Add the Capium sample path below when available.
 """
 
 from pathlib import Path
@@ -13,13 +11,18 @@ from extractor import extract_payslip
 from config import FIELDS
 
 # ---------------------------------------------------------------------------
-# Sample PDF paths — edit these to point at your test files.
-# Can be a direct path to a .pdf file OR a folder (first PDF inside is used).
+# Sample PDF paths — can be a direct .pdf file or a folder (all PDFs tested).
+# Passwords — leave as empty string "" if not required.
 # ---------------------------------------------------------------------------
 
 SAMPLES = {
     "Zelt":   r"C:\Users\The McDonnells\Downloads\zelt",
     "Capium": r"C:\Users\The McDonnells\Downloads\capium",
+}
+
+PASSWORDS = {
+    "Zelt":   "",
+    "Capium": "07111992",
 }
 
 # Fields that are legitimately None for each provider — not counted as failures.
@@ -33,33 +36,31 @@ EXPECTED_NONE = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def resolve_pdf(path_str: str) -> Path | None:
-    """Accept a file path or a folder — returns a Path to a .pdf file."""
+def resolve_pdfs(path_str: str) -> list[Path]:
+    """Return all PDFs at a path — accepts a single file or a folder."""
     p = Path(path_str)
     if p.is_file() and p.suffix.lower() == ".pdf":
-        return p
+        return [p]
     if p.is_dir():
         pdfs = sorted(p.glob("*.pdf"))
-        if pdfs:
-            return pdfs[0]
-        print(f"  No PDF files found in folder: {p}")
-        return None
-    # Try adding .pdf extension as a last resort
+        if not pdfs:
+            print(f"  No PDF files found in folder: {p}")
+        return pdfs
     with_ext = p.with_suffix(".pdf")
     if with_ext.is_file():
-        return with_ext
+        return [with_ext]
     print(f"  Could not find a PDF at: {p}")
-    return None
+    return []
 
 
-def run_test(provider_name: str, pdf_path: Path) -> None:
+def run_test(provider_name: str, pdf_path: Path, password: str = "") -> None:
     print()
     print("=" * 65)
     print(f"  {provider_name}  —  {pdf_path.name}")
     print("=" * 65)
 
     with open(pdf_path, "rb") as f:
-        result = extract_payslip(f, provider_name)
+        result = extract_payslip(f, provider_name, password=password)
 
     if result is None:
         print("  EXTRACTION FAILED — extract_payslip() returned None.")
@@ -114,8 +115,8 @@ if __name__ == "__main__":
         print("No sample paths configured — edit SAMPLES at the top of this file.")
 
     for provider_name, raw_path in SAMPLES.items():
-        pdf_path = resolve_pdf(raw_path)
-        if pdf_path:
-            run_test(provider_name, pdf_path)
+        password = PASSWORDS.get(provider_name, "")
+        for pdf_path in resolve_pdfs(raw_path):
+            run_test(provider_name, pdf_path, password=password)
 
     print()

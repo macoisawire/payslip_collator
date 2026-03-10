@@ -12,6 +12,13 @@ import re
 from .base import BaseProvider
 
 
+def _decode_cid(text: str) -> str:
+    """Convert (cid:XX) sequences to their Unicode characters.
+    Older Capium PDFs use CID font encoding for header labels; after decoding
+    they match the same patterns used for the 2025-26 format."""
+    return re.sub(r'\(cid:(\d+)\)', lambda m: chr(int(m.group(1))), text)
+
+
 def _money(text: str, pattern: str) -> float | None:
     """Find pattern in text, strip £ formatting from group(1), return as float.
     Returns None if pattern does not match."""
@@ -32,6 +39,9 @@ class CapiumProvider(BaseProvider):
     NAME = "Capium"
 
     def extract(self, text: str) -> dict:
+        # Older Capium PDFs (2023-24, 2024-25) encode header labels using CID
+        # font sequences — decode them first so all patterns work uniformly.
+        text = _decode_cid(text)
         # provider key is injected by extractor.py — not set here
         return {
             "employee_name":        self._employee_name(text),
@@ -113,34 +123,41 @@ class CapiumProvider(BaseProvider):
         return _find(text, r'\b([A-Z]{2}\d{6}[A-Z])\b')
 
     def _total_deductions(self, text: str) -> float | None:
-        # The summary row reads: "£324.20  HOURS  ­­  £1,561.56  £185.34"
-        # \xad (U+00AD, soft hyphen) appears between HOURS and the gross figure
-        # as column-separator padding — [\s\u00ad]+ absorbs both spaces and
-        # soft hyphens so the pattern doesn't break on them.
-        # The value after the gross pay figure (£1,561.56) is total deductions.
-        # Cross-check: PAYE £102.60 + NI £41.08 + Pension £41.66 = £185.34 ✓
-        return _money(text, r'HOURS[\s\u00ad]+£[\d,]+\.\d{2}\s+£([\d,]+\.\d{2})')
+        # 2025-26 format: summary row "HOURS ­­ £1,561.56 £185.34"
+        # \xad (U+00AD, soft hyphen) appears as column-separator padding —
+        # [\s\u00ad]+ absorbs both spaces and soft hyphens.
+        # Older format (2023-24, 2024-25): summary row ends "DEDUCTIONS £150.77"
+        # — try the explicit label first as it is more precise.
+        return (
+            _money(text, r'DEDUCTIONS\s+£([\d,]+\.\d{2})')
+            or _money(text, r'HOURS[\s\u00ad]+£[\d,]+\.\d{2}\s+£([\d,]+\.\d{2})')
+        )
 
     def _take_home_pay(self, text: str) -> float | None:
-        # The line before "I £1,561.56" reads: "£171.68  £1,376.22"
-        # "I" is Capium's row label for Income — it marks the end of the pay summary.
-        # The second £ value on the preceding line is the net pay.
-        # Cross-check: £1,561.56 gross - £185.34 deductions = £1,376.22 ✓
-        return _money(text, r'£[\d,]+\.\d{2}\s+£([\d,]+\.\d{2})\nI\s+£')
+        # 2025-26 format: the line before "I £1,561.56" reads "£171.68 £1,376.22"
+        # "I" is Capium's Income row label — second £ on preceding line is net pay.
+        # Older format (2023-24, 2024-25): structured as:
+        #   "NET\nNATIONAL £89.74 £1,257.56\nPAY"
+        # where the second £ value on the NATIONAL line is net pay.
+        return (
+            _money(text, r'£[\d,]+\.\d{2}\s+£([\d,]+\.\d{2})\nI\s+£')
+            or _money(text, r'NET\nNATIONAL\s+£[\d,]+\.\d{2}\s+£([\d,]+\.\d{2})\nPAY')
+        )
 
     def _ytd_ni_employee(self, text: str) -> float | None:
-        # After "Employee Pension £41.66\n" the very next line is "£458.06" —
-        # this is the YTD employee NI figure (unlabelled in the PDF).
-        # We anchor on the Employee Pension line above it since that label is
-        # unambiguous; the standalone £ value on the immediately following line
-        # is reliably the YTD NI employee figure.
-        # Plausibility: period NI £41.08 × ~11 periods ≈ £452–458 ✓
-        return _money(text, r'Employee Pension\s+£[\d,]+\.\d{2}\n£([\d,]+\.\d{2})')
+        # Older format (2023-24, 2024-25): explicitly labelled "N.I.EMPLOYEE £216.20"
+        # 2025-26 format: unlabelled — appears on the line immediately after
+        # "Employee Pension £41.66", anchored by that label.
+        return (
+            _money(text, r'N\.I\.EMPLOYEE\s+£([\d,]+\.\d{2})')
+            or _money(text, r'Employee Pension\s+£[\d,]+\.\d{2}\n£([\d,]+\.\d{2})')
+        )
 
     def _ytd_pension_employee(self, text: str) -> float | None:
-        # After the statutory pay block (SAP/SPP/SSP/SMP/SNCP — all £0.00),
-        # "SNCP £0.00\n" is the last entry before the YTD pension employee figure.
-        # We anchor on "SNCP £0.00\n" because it's the most stable endpoint of
-        # that block; the standalone £ value immediately after is YTD pension.
-        # Plausibility: £41.66/month × ~10 periods ≈ £416–432 ✓
-        return _money(text, r'SNCP\s+£0\.00\n£([\d,]+\.\d{2})')
+        # Older format (2023-24, 2024-25): explicitly labelled "PENSION EMPLOYEE £177.65"
+        # 2025-26 format: unlabelled — appears immediately after "SNCP £0.00",
+        # anchored by that statutory pay block endpoint.
+        return (
+            _money(text, r'PENSION EMPLOYEE\s+£([\d,]+\.\d{2})')
+            or _money(text, r'SNCP\s+£0\.00\n£([\d,]+\.\d{2})')
+        )
