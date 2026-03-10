@@ -7,6 +7,6 @@ from .zelt import ZeltProvider
 from .capium import CapiumProvider
 
 PROVIDERS = {
-    "Zelt": ZeltProvider,
     "Capium": CapiumProvider,
+    "Zelt": ZeltProvider,
 }
