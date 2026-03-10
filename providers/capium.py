@@ -100,15 +100,19 @@ class CapiumProvider(BaseProvider):
         # Title is excluded from the capture group per CLAUDE.md (strip the title).
         #
         # re.IGNORECASE: handles titles printed in all-caps (e.g. "MS" vs "Ms").
-        # [\w']+: the apostrophe is added alongside \w to capture surnames like
-        #   O'Sullivan, where bare \w+ would stop at the apostrophe and miss the
-        #   rest of the surname, causing the whole date-anchored match to fail.
+        # [\w'\xad]+: captures apostrophes (O'Sullivan) and soft hyphens (U+00AD).
+        #   pdfplumber encodes the hyphen in hyphenated surnames (e.g. Capper-Smith)
+        #   as \xad (soft hyphen), the same byte used as column-padding elsewhere.
+        #   Adding \xad here lets "Capper\xadSmith" match as one name token;
+        #   we then replace \xad with a real hyphen in the return value.
         m = re.search(
-            r'(?:Mrs?|Miss|Dr|Ms)\s+([A-Z][\w\']+(?:\s+[A-Z][\w\']+)*)\s+\d{2}/\d{2}/\d{4}',
+            r'(?:Mrs?|Miss|Dr|Ms)\s+([A-Z][\w\'\xad]+(?:\s+[A-Z][\w\'\xad]+)*)\s+\d{2}/\d{2}/\d{4}',
             text,
             re.IGNORECASE,
         )
-        return m.group(1).strip() if m else None
+        if not m:
+            return None
+        return m.group(1).strip().replace('\xad', '-')
 
     def _employer_name(self, text: str) -> str | None:
         # Line 2 sits immediately after the "EMPLOYER EMPLOYEE NAME DATE" header line.
@@ -143,7 +147,10 @@ class CapiumProvider(BaseProvider):
         # The \b word boundary still prevents a partial match against the NI
         # number earlier on the same line (tested: PK853428A cannot satisfy
         # [A-Z]{0,2}\d{3,4}[A-Z]{1,2} at a word boundary before "BACS").
-        return _find(text, r'\b([A-Z]{0,2}\d{3,4}[A-Z]{1,2})\s+BACS')
+        # (?:(?:M1|W1)\s+)?: some payslips include a Month 1 / Week 1 basis
+        # indicator (non-cumulative emergency tax) between the tax code and BACS,
+        # e.g. "C839L M1 BACS". Making it optional handles both layouts.
+        return _find(text, r'\b([A-Z]{0,2}\d{3,4}[A-Z]{1,2})\s+(?:(?:M1|W1)\s+)?BACS')
 
     def _ni_number(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
