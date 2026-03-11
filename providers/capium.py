@@ -80,6 +80,10 @@ class CapiumProvider(BaseProvider):
         # Older Capium PDFs (2023-24, 2024-25) encode header labels using CID
         # font sequences — decode them first so all patterns work uniformly.
         text = _decode_cid(text)
+        # Some Capium PDF font variants map the pound sign glyph to U+00FA (ú, 0xfa)
+        # instead of the standard U+00A3 (£, 0xa3).  Normalise here so all £
+        # patterns match regardless of which encoding the PDF uses.
+        text = text.replace('\xfa', '\xa3')
         # provider key is injected by extractor.py — not set here
         return {
             "employee_name":        self._employee_name(text),
@@ -238,8 +242,9 @@ class CapiumProvider(BaseProvider):
         )
 
     def extra_fields(self, text: str) -> dict:
-        # Decode CID sequences first — same pre-processing as extract().
+        # Same pre-processing as extract().
         text = _decode_cid(text)
+        text = text.replace('\xfa', '\xa3')
         extras = {}
         # Scan for every "LABEL £amount" pair where LABEL starts with a capital.
         # \b after the £ amount prevents partial matches inside longer numbers.
