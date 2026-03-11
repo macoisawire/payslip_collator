@@ -6,7 +6,8 @@
 #   - Line 4: "NI_NUMBER  TAX_CODE  BACS  M 10" — period label follows BACS
 #   - \xad (soft hyphen, U+00AD) appears as column padding on the HOURS summary row
 #   - Several YTD values are unlabelled standalone £ lines; we only extract ones we can verify
-#   - ni_employer, pension_employer, ytd_taxable, ytd_pension_employer are absent from this format
+#   - pension_employer, ytd_taxable, ytd_pension_employer are absent from this format
+#   - ni_employer is unlabelled: first £ value on the line just above the "I £gross" row
 
 import re
 from .base import BaseProvider
@@ -25,6 +26,8 @@ _KNOWN_LABELS = frozenset({
     "Car Salary Sacrifice", "Pension Payment",
     # Canonical deductions
     "PAYE Tax", "Employee NI", "Employee Pension", "Student Loan",
+    # salary_adj appears with both capitalisation variants in Capium PDFs
+    "Salary adj",
     # YTD / summary figures captured or intentionally excluded
     "TOTAL PAY", "TAXABLE PAY", "TAX",
     "N.I.EMPLOYEE", "N.I.EMPLOYER",
@@ -46,11 +49,23 @@ def _decode_cid(text: str) -> str:
 
 def _money(text: str, pattern: str) -> float | None:
     """Find pattern in text, strip £ formatting from group(1), return as float.
-    Returns None if pattern does not match."""
+    Also handles accounting-negative notation: (£168.60) → -168.60.
+    Returns None if pattern does not match in either form."""
     m = re.search(pattern, text)
-    if not m:
-        return None
-    return float(m.group(1).replace(',', ''))
+    if m:
+        return float(m.group(1).replace(',', ''))
+    # Try accounting-negative variant: insert \( before £ and \) after the
+    # capture group.  The two replacements are precise string operations:
+    #   £(  →  \(£(   adds the opening bracket requirement before the currency
+    #   \.\d{2})  →  \.\d{2})\)   adds the closing bracket requirement after
+    #                               the capture group (first occurrence only)
+    neg = pattern.replace('£(', r'\(£(', 1)
+    if neg != pattern:
+        neg = neg.replace(r'\.\d{2})', r'\.\d{2})\)', 1)
+        m = re.search(neg, text)
+        if m:
+            return -float(m.group(1).replace(',', ''))
+    return None
 
 
 def _find(text: str, pattern: str, flags: int = 0) -> str | None:
@@ -99,7 +114,7 @@ class CapiumProvider(BaseProvider):
             "on_call":              _money(text, r'On Call\s+£([\d,]+\.\d{2})'),
             "kit_pay":              _money(text, r'Kit Pay\s+£([\d,]+\.\d{2})'),
             "holiday_exchange":     _money(text, r'Holiday Exchange\s+£([\d,]+\.\d{2})'),
-            "salary_adj":           _money(text, r'Salary Adj\s+£([\d,]+\.\d{2})'),
+            "salary_adj":           _money(text, r'(?i)Salary Adj\s+£([\d,]+\.\d{2})'),
             "salary_maternity_adj": _money(text, r'Salary Maternity Adj\s+£([\d,]+\.\d{2})'),
             "smp_top_up":           _money(text, r'SMP Top Up\s+£([\d,]+\.\d{2})'),
             # Deductions
@@ -114,7 +129,7 @@ class CapiumProvider(BaseProvider):
             "paye_tax":             _money(text, r'PAYE Tax\s+£([\d,]+\.\d{2})'),
             "total_deductions":     None,  # Excluded from Capium export (client request, March 2026)
             "take_home_pay":        self._take_home_pay(text),
-            "ni_employer":          None,  # Not present in Capium format
+            "ni_employer":          self._ni_employer(text),
             "pension_employer":     None,  # Not present in Capium format
             "ytd_gross":            None,  # Excluded from Capium export (client request, March 2026)
             "ytd_taxable":          None,  # Excluded from Capium export (client request, March 2026)
@@ -177,18 +192,25 @@ class CapiumProvider(BaseProvider):
 
     def _tax_code(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
-        # Tax code sits immediately before "BACS". Two structural families exist:
+        # Tax code sits immediately before "BACS". Four structural families:
         #
-        #   K-codes  (e.g. "K296", "K18"):  K + digits, no trailing letter.
-        #            HMRC uses these when untaxed income exceeds the personal allowance.
-        #            Matched by:  K\d{1,4}
+        #   Prefixed K-codes (e.g. "K296", "K18", "CK459", "SK296"):
+        #            optional letter + K + digits, no trailing letter.
+        #            Matched by:  [A-Z]?K\d{1,4}
+        #
+        #   D-codes (e.g. "D0", "D1", "SD0", "SD1"):
+        #            optional letter + D + 1-2 digits, no trailing letter.
+        #            Matched by:  [A-Z]?D\d{1,2}
+        #
+        #   Pure-letter codes (e.g. "BR", "NT", "SBR"):
+        #            2-3 uppercase letters, no digits at all.
+        #            Matched by:  [A-Z]{2,3}
         #
         #   Standard (e.g. "1257L", "0T", "45T", "S1257L", "793T"):
         #            optional 0-2 letter prefix + 1-4 digits + exactly 1 trailing letter.
         #            Matched by:  [A-Z]{0,2}\d{1,4}[A-Z]
-        #            \d{1,4} min=1 handles the single-digit emergency code "0T".
         #
-        # K-code alternative is listed first so the leading "K" is not consumed
+        # K and D alternatives come first so their leading letter is not consumed
         # by [A-Z]{0,2} and then fail for lack of a trailing letter.
         #
         # Basis indicator (M1/W1): non-cumulative payslips print the Month 1 / Week 1
@@ -197,7 +219,7 @@ class CapiumProvider(BaseProvider):
         # group(2) is a capturing group so we can append it without a space:
         #   "793T" + "M1" = "793TM1"
         # When no basis indicator is present group(2) is None and only group(1) is returned.
-        m = re.search(r'\b(K\d{1,4}|[A-Z]{0,2}\d{1,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
+        m = re.search(r'\b([A-Z]?K\d{1,4}|[A-Z]?D\d{1,2}|[A-Z]{2,3}|[A-Z]{0,2}\d{1,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
         if not m:
             return None
         code = m.group(1)
@@ -232,6 +254,18 @@ class CapiumProvider(BaseProvider):
             or _money(text, r'NET\nNATIONAL\s+£[\d,]+\.\d{2}\s+£([\d,]+\.\d{2})\nPAY')
         )
 
+    def _ni_employer(self, text: str) -> float | None:
+        # Mirror of _take_home_pay — captures the FIRST £ value on the two-value
+        # line immediately above the "I £gross" row, where the second value is net pay.
+        # 2025-26 format: "£1,499.32 £6,250.90\nI £11,222.33"
+        #                   ↑ employer NI  ↑ net pay
+        # Older format: "NET\nNATIONAL £89.74 £1,257.56\nPAY"
+        #                               ↑ employer NI  ↑ net pay
+        return (
+            _money(text, r'£([\d,]+\.\d{2})\s+£[\d,]+\.\d{2}\nI\s+£')
+            or _money(text, r'NET\nNATIONAL\s+£([\d,]+\.\d{2})\s+£[\d,]+\.\d{2}\nPAY')
+        )
+
     def _ytd_ni_employee(self, text: str) -> float | None:
         # Older format (2023-24, 2024-25): explicitly labelled "N.I.EMPLOYEE £216.20"
         # 2025-26 format: unlabelled — appears on the line immediately after
@@ -258,6 +292,15 @@ class CapiumProvider(BaseProvider):
                 # in months with no adoption pay) — skip to avoid noise.
                 continue
             # Sanitise label to a valid dict key; first match wins if repeated.
+            key = re.sub(r'\W+', '_', label.lower()).strip('_')
+            if key not in extras:
+                extras[key] = value
+        # Second pass: accounting-negative (£168.60) values — brackets mean negative.
+        for m in re.finditer(r"([A-Z][A-Za-z ./'\-]+?)\s+\(£([\d,]+\.\d{2})\)", text):
+            label = m.group(1).strip()
+            if label in _KNOWN_LABELS:
+                continue
+            value = -float(m.group(2).replace(',', ''))
             key = re.sub(r'\W+', '_', label.lower()).strip('_')
             if key not in extras:
                 extras[key] = value
