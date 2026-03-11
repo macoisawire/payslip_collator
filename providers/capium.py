@@ -173,13 +173,19 @@ class CapiumProvider(BaseProvider):
 
     def _tax_code(self, text: str) -> str | None:
         # Line 4: "JW648535D  1257L  BACS  M 10"
-        # Tax code sits immediately before "BACS". Standard UK codes are digits
-        # then a letter (e.g. "1257L"), but some codes carry a leading letter
-        # prefix — e.g. "C1257L" (cumulative), "S1257L" (Scottish), "K475".
-        # [A-Z]{0,2} makes the prefix optional so both forms are captured.
-        # \d{1,4}: minimum 1 digit handles the emergency code "0T" (single digit),
-        # "45T" (2 digits), and standard 3-4 digit codes like "1257L".
-        # [A-Z]: exactly 1 trailing letter — all digit-containing UK codes end in one letter.
+        # Tax code sits immediately before "BACS". Two structural families exist:
+        #
+        #   K-codes  (e.g. "K296", "K18"):  K + digits, no trailing letter.
+        #            HMRC uses these when untaxed income exceeds the personal allowance.
+        #            Matched by:  K\d{1,4}
+        #
+        #   Standard (e.g. "1257L", "0T", "45T", "S1257L", "793T"):
+        #            optional 0-2 letter prefix + 1-4 digits + exactly 1 trailing letter.
+        #            Matched by:  [A-Z]{0,2}\d{1,4}[A-Z]
+        #            \d{1,4} min=1 handles the single-digit emergency code "0T".
+        #
+        # K-code alternative is listed first so the leading "K" is not consumed
+        # by [A-Z]{0,2} and then fail for lack of a trailing letter.
         #
         # Basis indicator (M1/W1): non-cumulative payslips print the Month 1 / Week 1
         # basis indicator as a separate token between the tax code and BACS:
@@ -187,7 +193,7 @@ class CapiumProvider(BaseProvider):
         # group(2) is a capturing group so we can append it without a space:
         #   "793T" + "M1" = "793TM1"
         # When no basis indicator is present group(2) is None and only group(1) is returned.
-        m = re.search(r'\b([A-Z]{0,2}\d{1,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
+        m = re.search(r'\b(K\d{1,4}|[A-Z]{0,2}\d{1,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
         if not m:
             return None
         code = m.group(1)
