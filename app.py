@@ -40,6 +40,16 @@ provider_name = st.selectbox(
     on_change=_clear_results,
 )
 
+provider_cls = PROVIDERS[provider_name]
+if provider_cls.EXCLUDED_FIELDS:
+    excluded_names = [
+        name for key, name in FIELDS if key in provider_cls.EXCLUDED_FIELDS
+    ]
+    st.info(
+        f"**{provider_name}:** the following fields are not included in the export for this provider: "
+        + ", ".join(f"*{n}*" for n in excluded_names) + "."
+    )
+
 pdf_password = st.text_input(
     "PDF password (if required)",
     placeholder="Leave blank for unprotected PDFs",
@@ -94,9 +104,13 @@ if st.button("Process", disabled=not uploaded_files):
 records = st.session_state.get("records")
 
 if records:
-    canonical_keys = [key for key, _ in FIELDS]
-    canonical_names = [name for _, name in FIELDS]
-    canonical_set = set(canonical_keys)
+    # Mirror spreadsheet.py: suppress canonical columns that are all-None
+    canonical_keys = [
+        key for key, _ in FIELDS
+        if any(r.get(key) is not None for r in records)
+    ]
+    canonical_names = [name for key, name in FIELDS if key in canonical_keys]
+    canonical_set = set(key for key, _ in FIELDS)
 
     # Collect extra (dynamic) keys in first-seen order across all records.
     seen_extra: set[str] = set()

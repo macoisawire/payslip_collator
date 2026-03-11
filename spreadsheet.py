@@ -48,9 +48,15 @@ def build_workbook(records: list[dict]) -> openpyxl.Workbook:
     ws = wb.active
     ws.title = "Payslips"
 
-    canonical_keys = [key for key, _ in FIELDS]
-    canonical_names = [name for _, name in FIELDS]
-    canonical_set = set(canonical_keys)
+    # Only include canonical columns that have at least one non-None value
+    # across all records. This suppresses provider-specific excluded fields
+    # (e.g. Capium's excluded YTD columns) without needing special-case logic.
+    canonical_keys = [
+        key for key, _ in FIELDS
+        if any(record.get(key) is not None for record in records)
+    ]
+    canonical_names = [name for key, name in FIELDS if key in canonical_keys]
+    canonical_set = set(key for key, _ in FIELDS)
 
     # Collect extra (dynamic) keys in first-seen order across all records.
     seen_extra: set[str] = set()

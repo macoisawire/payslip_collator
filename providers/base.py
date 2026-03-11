@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 
 class BaseProvider(ABC):
     NAME = ""  # Human-readable name shown in the Streamlit provider selectbox
+    EXCLUDED_FIELDS: frozenset[str] = frozenset()  # Field keys omitted from this provider's export
 
     @abstractmethod
     def extract(self, text: str) -> dict:

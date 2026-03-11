@@ -63,6 +63,19 @@ def _find(text: str, pattern: str, flags: int = 0) -> str | None:
 class CapiumProvider(BaseProvider):
     NAME = "Capium"
 
+    # Fields excluded from the Capium export per client request (March 2026).
+    # These columns are suppressed in both the preview table and the Excel download.
+    EXCLUDED_FIELDS: frozenset[str] = frozenset({
+        "pension_employee",
+        "total_deductions",
+        "ytd_gross",
+        "ytd_taxable",
+        "ytd_tax_paid",
+        "ytd_ni_employee",
+        "ytd_pension_employee",
+        "ytd_pension_employer",
+    })
+
     def extract(self, text: str) -> dict:
         # Older Capium PDFs (2023-24, 2024-25) encode header labels using CID
         # font sequences — decode them first so all patterns work uniformly.
@@ -86,7 +99,7 @@ class CapiumProvider(BaseProvider):
             "salary_maternity_adj": _money(text, r'Salary Maternity Adj\s+£([\d,]+\.\d{2})'),
             "smp_top_up":           _money(text, r'SMP Top Up\s+£([\d,]+\.\d{2})'),
             # Deductions
-            "pension_employee":     _money(text, r'Employee Pension\s+£([\d,]+\.\d{2})'),
+            "pension_employee":     None,  # Excluded from Capium export (client request, March 2026)
             "student_loan":         _money(text, r'Student Loan\s+£([\d,]+\.\d{2})'),
             "healthcare":           _money(text, r'Healthcare\s+£([\d,]+\.\d{2})'),
             "child_healthcare":     _money(text, r'Child Healthcare\s+£([\d,]+\.\d{2})'),
@@ -95,16 +108,16 @@ class CapiumProvider(BaseProvider):
             "pension_payment":      _money(text, r'Pension Payment\s+£([\d,]+\.\d{2})'),
             "ni_employee":          _money(text, r'Employee NI\s+£([\d,]+\.\d{2})'),
             "paye_tax":             _money(text, r'PAYE Tax\s+£([\d,]+\.\d{2})'),
-            "total_deductions":     self._total_deductions(text),
+            "total_deductions":     None,  # Excluded from Capium export (client request, March 2026)
             "take_home_pay":        self._take_home_pay(text),
             "ni_employer":          None,  # Not present in Capium format
             "pension_employer":     None,  # Not present in Capium format
-            "ytd_gross":            _money(text, r'TOTAL PAY\s+£([\d,]+\.\d{2})'),
-            "ytd_taxable":          None,  # N.I'ABLE PAY is present but is NI-able earnings, not taxable pay
-            "ytd_tax_paid":         _money(text, r'\nTAX\s+£([\d,]+\.\d{2})'),
-            "ytd_ni_employee":      self._ytd_ni_employee(text),
-            "ytd_pension_employee": self._ytd_pension_employee(text),
-            "ytd_pension_employer": None,  # Not present in Capium format
+            "ytd_gross":            None,  # Excluded from Capium export (client request, March 2026)
+            "ytd_taxable":          None,  # Excluded from Capium export (client request, March 2026)
+            "ytd_tax_paid":         None,  # Excluded from Capium export (client request, March 2026)
+            "ytd_ni_employee":      None,  # Excluded from Capium export (client request, March 2026)
+            "ytd_pension_employee": None,  # Excluded from Capium export (client request, March 2026)
+            "ytd_pension_employer": None,  # Excluded from Capium export (client request, March 2026)
         }
 
     # -------------------------------------------------------------------------
@@ -164,7 +177,8 @@ class CapiumProvider(BaseProvider):
         # then a letter (e.g. "1257L"), but some codes carry a leading letter
         # prefix — e.g. "C1257L" (cumulative), "S1257L" (Scottish), "K475".
         # [A-Z]{0,2} makes the prefix optional so both forms are captured.
-        # \d{2,4}: minimum 2 digits handles codes like "45T" as well as 3-4 digit codes.
+        # \d{1,4}: minimum 1 digit handles the emergency code "0T" (single digit),
+        # "45T" (2 digits), and standard 3-4 digit codes like "1257L".
         # [A-Z]: exactly 1 trailing letter — all digit-containing UK codes end in one letter.
         #
         # Basis indicator (M1/W1): non-cumulative payslips print the Month 1 / Week 1
@@ -173,7 +187,7 @@ class CapiumProvider(BaseProvider):
         # group(2) is a capturing group so we can append it without a space:
         #   "793T" + "M1" = "793TM1"
         # When no basis indicator is present group(2) is None and only group(1) is returned.
-        m = re.search(r'\b([A-Z]{0,2}\d{2,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
+        m = re.search(r'\b([A-Z]{0,2}\d{1,4}[A-Z])\s+((?:M1|W1)\s+)?BACS', text)
         if not m:
             return None
         code = m.group(1)
