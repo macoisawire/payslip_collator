@@ -32,6 +32,7 @@ FIELDS = [
     ("postgraduate_loan",     "Postgraduate Loan"),
     ("car_salary_sacrifice",  "Car Salary Sacrifice"),
     ("pension_payment",       "Pension Payment"),
+    ("wpr_pension",           "WPR Pension"),
     ("ni_employee",           "Employee NI"),
     ("paye_tax",              "PAYE Tax"),
     ("total_deductions",      "Total Deductions"),

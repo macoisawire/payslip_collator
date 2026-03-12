@@ -20,10 +20,12 @@ _KNOWN_LABELS = frozenset({
     "Basic Pay", "SMP",
     # Canonical earnings extras (now in schema)
     "Car Allowance", "On Call", "Kit Pay", "Holiday Exchange",
-    "Salary Adj", "Salary Maternity Adj", "SMP Top Up",
+    "Salary Adj", "Salary Maternity Adj", "Salary Maternity ADJ", "SMP Top Up",
     # Canonical deductions (now in schema)
     "Healthcare", "Child Healthcare", "Postgraduate Loan",
-    "Car Salary Sacrifice", "Pension Payment",
+    "Car Salary Sacrifice", "Pension Payment", "WPR Pension",
+    # RAF = Refer a Friend bonus — earning, kept positive, excluded from double-count
+    "RAF",
     # Canonical deductions
     "PAYE Tax", "Employee NI", "Employee Pension", "Student Loan",
     # salary_adj appears with both capitalisation variants in Capium PDFs
@@ -75,6 +77,14 @@ def _find(text: str, pattern: str, flags: int = 0) -> str | None:
     return m.group(1).strip() if m else None
 
 
+def _deduct(text: str, pattern: str) -> float | None:
+    """Extract a monetary value and return it as negative (deduction sign convention).
+    Handles both plain values (Employee NI £0.00) and accounting-negative brackets
+    ((£168.60)) — both become negative, consistent with deductions column convention."""
+    val = _money(text, pattern)
+    return -abs(val) if val is not None else None
+
+
 class CapiumProvider(BaseProvider):
     NAME = "Capium"
 
@@ -82,7 +92,6 @@ class CapiumProvider(BaseProvider):
     # These columns are suppressed in both the preview table and the Excel download.
     EXCLUDED_FIELDS: frozenset[str] = frozenset({
         "pension_employee",
-        "total_deductions",
         "ytd_gross",
         "ytd_taxable",
         "ytd_tax_paid",
@@ -99,6 +108,8 @@ class CapiumProvider(BaseProvider):
         # instead of the standard U+00A3 (£, 0xa3).  Normalise here so all £
         # patterns match regardless of which encoding the PDF uses.
         text = text.replace('\xfa', '\xa3')
+        # Pre-compute total_deductions so we can apply -abs() cleanly in the dict.
+        _td = self._total_deductions(text)
         # provider key is injected by extractor.py — not set here
         return {
             "employee_name":        self._employee_name(text),
@@ -107,7 +118,7 @@ class CapiumProvider(BaseProvider):
             "period_date":          self._period_date(text),
             "tax_code":             self._tax_code(text),
             "ni_number":            self._ni_number(text),
-            # Earnings
+            # Earnings — positive values
             "basic_pay":            _money(text, r'Basic Pay\s+£([\d,]+\.\d{2})'),
             "smp":                  _money(text, r'SMP\s+£([\d,]+\.\d{2})'),
             "car_allowance":        _money(text, r'Car Allowance\s+£([\d,]+\.\d{2})'),
@@ -115,19 +126,20 @@ class CapiumProvider(BaseProvider):
             "kit_pay":              _money(text, r'Kit Pay\s+£([\d,]+\.\d{2})'),
             "holiday_exchange":     _money(text, r'Holiday Exchange\s+£([\d,]+\.\d{2})'),
             "salary_adj":           _money(text, r'(?i)Salary Adj\s+£([\d,]+\.\d{2})'),
-            "salary_maternity_adj": _money(text, r'Salary Maternity Adj\s+£([\d,]+\.\d{2})'),
+            "salary_maternity_adj": self._salary_maternity_adj(text),
             "smp_top_up":           _money(text, r'SMP Top Up\s+£([\d,]+\.\d{2})'),
-            # Deductions
+            # Deductions — stored as negative values (deduction sign convention)
             "pension_employee":     None,  # Excluded from Capium export (client request, March 2026)
-            "student_loan":         _money(text, r'Student Loan\s+£([\d,]+\.\d{2})'),
-            "healthcare":           _money(text, r'Healthcare\s+£([\d,]+\.\d{2})'),
-            "child_healthcare":     _money(text, r'Child Healthcare\s+£([\d,]+\.\d{2})'),
-            "postgraduate_loan":    _money(text, r'Postgraduate Loan\s+£([\d,]+\.\d{2})'),
-            "car_salary_sacrifice": _money(text, r'Car Salary Sacrifice\s+£([\d,]+\.\d{2})'),
-            "pension_payment":      _money(text, r'Pension Payment\s+£([\d,]+\.\d{2})'),
-            "ni_employee":          _money(text, r'Employee NI\s+£([\d,]+\.\d{2})'),
-            "paye_tax":             _money(text, r'PAYE Tax\s+£([\d,]+\.\d{2})'),
-            "total_deductions":     None,  # Excluded from Capium export (client request, March 2026)
+            "student_loan":         _deduct(text, r'Student Loan\s+£([\d,]+\.\d{2})'),
+            "healthcare":           _deduct(text, r'Healthcare\s+£([\d,]+\.\d{2})'),
+            "child_healthcare":     _deduct(text, r'Child Healthcare\s+£([\d,]+\.\d{2})'),
+            "postgraduate_loan":    _deduct(text, r'Postgraduate Loan\s+£([\d,]+\.\d{2})'),
+            "car_salary_sacrifice": _deduct(text, r'Car Salary Sacrifice\s+£([\d,]+\.\d{2})'),
+            "pension_payment":      _deduct(text, r'Pension Payment\s+£([\d,]+\.\d{2})'),
+            "wpr_pension":          _deduct(text, r'WPR Pension\s+£([\d,]+\.\d{2})'),
+            "ni_employee":          _deduct(text, r'Employee NI\s+£([\d,]+\.\d{2})'),
+            "paye_tax":             _deduct(text, r'PAYE Tax\s+£([\d,]+\.\d{2})'),
+            "total_deductions":     -abs(_td) if _td is not None else None,
             "take_home_pay":        self._take_home_pay(text),
             "ni_employer":          self._ni_employer(text),
             "pension_employer":     None,  # Not present in Capium format
@@ -231,6 +243,22 @@ class CapiumProvider(BaseProvider):
         # UK NI numbers are always exactly: 2 letters + 6 digits + 1 letter.
         # Word boundaries ensure we don't partially match adjacent text.
         return _find(text, r'\b([A-Z]{2}\d{6}[A-Z])\b')
+
+    def _salary_maternity_adj(self, text: str) -> float | None:
+        # In Capium's two-column layout, pdfplumber pairs a gross item (left column)
+        # and a deduction item (right column) on the same visual line.  When
+        # "Salary Maternity Adj" is a DEDUCTION it appears alone at the start of
+        # its line — no earnings label precedes it on that row.  When it is an
+        # EARNING it is followed by a deduction label on the same line.
+        #
+        # Detection: if the label starts a line (re.MULTILINE ^) → Deductions column
+        # → return negative.  Otherwise → Gross Pay column → return positive.
+        val = _money(text, r'(?i)Salary Maternity ADJ\s+£([\d,]+\.\d{2})')
+        if val is None:
+            return None
+        if re.search(r'(?mi)^Salary Maternity ADJ\s', text):
+            return -abs(val)
+        return val
 
     def _total_deductions(self, text: str) -> float | None:
         # 2025-26 format: summary row "HOURS ­­ £1,561.56 £185.34"
