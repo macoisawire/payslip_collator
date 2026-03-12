@@ -23,6 +23,9 @@ FIELDS = [
     ("salary_adj",            "Salary Adjustment"),
     ("salary_maternity_adj",  "Salary Maternity Adjustment"),
     ("smp_top_up",            "SMP Top Up"),
+    ("ere_pension_pay",       "ERE Pension Pay"),
+    ("raf_pay",               "RAF Pay"),
+    ("carers_leave",          "Carers Leave"),
 
     # Deductions
     ("pension_employee",      "Employee Pension Contribution"),

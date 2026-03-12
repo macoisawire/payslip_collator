@@ -21,6 +21,7 @@ _KNOWN_LABELS = frozenset({
     # Canonical earnings extras (now in schema)
     "Car Allowance", "On Call", "Kit Pay", "Holiday Exchange",
     "Salary Adj", "Salary Maternity Adj", "Salary Maternity ADJ", "SMP Top Up",
+    "ERE Pension Pay", "RAF Pay", "Carers Leave",
     # Canonical deductions (now in schema)
     "Healthcare", "Child Healthcare", "Postgraduate Loan",
     "Car Salary Sacrifice", "Pension Payment", "WPR Pension",
@@ -128,6 +129,9 @@ class CapiumProvider(BaseProvider):
             "salary_adj":           _money(text, r'(?i)Salary Adj\s+£([\d,]+\.\d{2})'),
             "salary_maternity_adj": self._salary_maternity_adj(text),
             "smp_top_up":           _money(text, r'SMP Top Up\s+£([\d,]+\.\d{2})'),
+            "ere_pension_pay":      _money(text, r'ERE Pension Pay\s+£([\d,]+\.\d{2})'),
+            "raf_pay":              _money(text, r'RAF Pay\s+£([\d,]+\.\d{2})'),
+            "carers_leave":         _money(text, r'Carers Leave\s+£([\d,]+\.\d{2})'),
             # Deductions — stored as negative values (deduction sign convention)
             "pension_employee":     None,  # Excluded from Capium export (client request, March 2026)
             "student_loan":         _deduct(text, r'Student Loan\s+£([\d,]+\.\d{2})'),
